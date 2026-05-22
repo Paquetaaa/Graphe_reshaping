@@ -1,0 +1,88 @@
+{
+    "Author": "GRENECHE Lucas_ECBS_2",
+    "Scored time": "2026-05-15-19-33",
+    "Score": [
+        {
+            "instance_id": 22,
+            "runtime": 83.37279808521271,
+            "distance": 2041.933001692558,
+            "time_step": 87.0,
+            "goal_rate": 1.0,
+            "goal_count": 2,
+            "subtotal_cost": 428.0
+        },
+        {
+            "instance_id": 23,
+            "runtime": 15.40770709514618,
+            "distance": 1730.818805862575,
+            "time_step": 93.0,
+            "goal_rate": 1.0,
+            "goal_count": 2,
+            "subtotal_cost": 359.0
+        },
+        {
+            "instance_id": 24,
+            "runtime": 89.42989408969879,
+            "distance": 2727.9588879599482,
+            "time_step": 100.0,
+            "goal_rate": 0.9,
+            "goal_count": 0,
+            "subtotal_cost": 582.0
+        },
+        {
+            "instance_id": 25,
+            "runtime": 75.24046695232391,
+            "distance": 2575.714705177157,
+            "time_step": 87.5,
+            "goal_rate": 1.0,
+            "goal_count": 2,
+            "subtotal_cost": 557.0
+        },
+        {
+            "instance_id": 26,
+            "runtime": 94.32207751274109,
+            "distance": 3124.7831266454987,
+            "time_step": 100.0,
+            "goal_rate": 0.7,
+            "goal_count": 0,
+            "subtotal_cost": 669.0
+        },
+        {
+            "instance_id": 27,
+            "runtime": 98.8027480840683,
+            "distance": 3210.280822045814,
+            "time_step": 97.0,
+            "goal_rate": 1.0,
+            "goal_count": 2,
+            "subtotal_cost": 669.0
+        },
+        {
+            "instance_id": 28,
+            "runtime": 108.5512900352478,
+            "distance": 3554.816517651143,
+            "time_step": 100.0,
+            "goal_rate": 0.875,
+            "goal_count": 0,
+            "subtotal_cost": 774.5
+        },
+        {
+            "instance_id": 29,
+            "runtime": 101.706866979599,
+            "distance": 2933.9010377323207,
+            "time_step": 98.0,
+            "goal_rate": 0.9166666666666667,
+            "goal_count": 1,
+            "subtotal_cost": 652.0
+        },
+        {
+            "instance_id": 30,
+            "runtime": 97.68850147724152,
+            "distance": 2920.598017384186,
+            "time_step": 98.5,
+            "goal_rate": 0.9583333333333333,
+            "goal_count": 1,
+            "subtotal_cost": 641.0
+        }
+    ],
+    "final cost": 5331.5
+}

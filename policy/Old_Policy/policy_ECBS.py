@@ -5,7 +5,7 @@ import heapq
 import time
 
 ### submission information ####
-TEAM_NAME = "GRENECHE Lucas"
+TEAM_NAME = "GRENECHE Lucas_ECBS"
 ##############################
 
 ##############################
@@ -151,32 +151,6 @@ def reshape_graph_from_G(env, G, pos):
     return G_new
 
 
-def apply_safety(env, actions):
-    """Defensive net: prevent same-target and head-on-swap conflicts."""
-    do = True
-    while do:
-        do = False
-        for i in range(env.agent_num):
-            if env.current_goal[i] is not None:
-                continue   # agent en transit, on ne peut pas changer son action
-
-            start_i = env.current_start[i]
-            for j in range(env.agent_num):
-                if j == i:
-                    continue
-                # Case 1: deux agents visent le même nœud
-                if actions[i] == actions[j]:
-                    actions[i] = start_i
-                    do = True
-                    break
-                # Case 2: head-on swap
-                if (actions[j] == env.current_start[i]
-                        and actions[i] == env.current_start[j]):
-                    actions[i] = start_i
-                    do = True
-                    break
-    return actions
-
 
 def conflicts_for_agent(solution, env, agent):
     """Return all conflicts where 'agent' is one of the two involved agents."""
@@ -219,145 +193,60 @@ def conflicts_for_agent(solution, env, agent):
 
 
 
-def priority_based_planning(env, max_horizon=500, max_attempts=200):
-    import random
-    best_paths = None
-    best_count = 0
-    best_cost = float('inf')
-    
-    for attempt in range(max_attempts):
-        if attempt == 0:
-            print("Test descending order", flush=True)
-            # First try, order by descending distance to goal (agents with longer paths are more likely to cause conflicts, so we plan them first)
-            agent_order = sorted(range(env.agent_num),
-                                 key=lambda a: -h_euclidian(env.pos,
-                                                            env.current_start[a],
-                                                            env.goal_array[a]))
-        elif attempt == 1:
-            print("Test ascending order", flush=True)
-            # Second try, order by ascending distance to goal (agents with shorter paths are more likely to be flexible and adapt to constraints, so we plan them later)
-            agent_order = sorted(range(env.agent_num),
-                                 key=lambda a: h_euclidian(env.pos,
-                                                            env.current_start[a],
-                                                            env.goal_array[a]))
-            
-        elif attempt == 2:
-            print("Test centrality order", flush=True)
-            # Ordre par "centralité" du start (les agents au cœur du graphe en premier)
-            centrality = nx.degree_centrality(env.G)
-            agent_order = sorted(range(env.agent_num),
-                                key=lambda a: -centrality.get(env.current_start[a], 0))
+def priority_based_planning(env, max_horizon=500):
+    """Single-pass priority-based planning, matching the CBS/ICBS/DS fallback
+    for methodological parity. Agents are planned sequentially in natural
+    order [0, 1, ..., n-1]; each agent's A* respects time-stamped vertex
+    constraints from higher-priority agents (no proximity blocking, to mirror
+    the simpler CBS-family fallback)."""
+    paths_pp = {}
+    constraints = set()
+    for agent in range(env.agent_num):
+        p = a_star_constrained(env, agent,
+                               env.current_start[agent],
+                               env.goal_array[agent],
+                               constraints)
+        if p is None:
+            print(f"[fallback] agent {agent} infeasible, skipping", flush=True)
+            continue
+        paths_pp[agent] = p
+        # Block future agents from this agent's (node, t) pairs along the path
+        for t, node in enumerate(p):
+            for other in range(agent + 1, env.agent_num):
+                constraints.add((other, node, t, '-'))
+        # Goal protection: agent stays on its goal indefinitely
+        goal = env.goal_array[agent]
+        arrival = len(p) - 1
+        for t in range(arrival, max_horizon):
+            for other in range(agent + 1, env.agent_num):
+                constraints.add((other, goal, t, '-'))
+    return paths_pp
 
-        elif attempt == 3:
-            print("Test conflict-based order", flush=True)
-            # Ordre par densité de conflits potentiels (overlap des shortest paths)
-            # Précomputer les shortest paths sans contraintes
-            sp = {}
-            for a in range(env.agent_num):
-                try:
-                    sp[a] = set(nx.shortest_path(env.G, env.current_start[a], env.goal_array[a]))
-                except nx.NetworkXNoPath:
-                    sp[a] = set()
-            # Score = nombre de nodes partagés avec d'autres agents
-            score = {}
-            for a in range(env.agent_num):
-                score[a] = sum(len(sp[a] & sp[b]) for b in range(env.agent_num) if b != a)
-            agent_order = sorted(range(env.agent_num), key=lambda a: -score[a])
-        
-        # Nouveau attempt 4 : par "criticité du goal" (degré du goal node)
-        elif attempt == 4:
-            print("Test Goal criticality order", flush=True)
-            agent_order = sorted(range(env.agent_num),
-                                key=lambda a: -env.G.degree(env.goal_array[a]))
+def apply_safety(env, actions):
+    """Defensive net: prevent same-target and head-on-swap conflicts."""
+    do = True
+    while do:
+        do = False
+        for i in range(env.agent_num):
+            if env.current_goal[i] is not None:
+                continue   # agent en transit, on ne peut pas changer son action
 
-        # Nouveau attempt 5 : par "criticité du start"
-        elif attempt == 5:
-            print("Test Start criticality order", flush=True)
-            agent_order = sorted(range(env.agent_num),
-                                key=lambda a: -env.G.degree(env.current_start[a]))
-
-        # Nouveau attempt 6 : permutation "miroir" (ordre inverse de descending)
-        elif attempt == 6:
-            print("Test reverse order", flush=True)
-            # déjà couvert par ascending mais avec une autre logique
-            agent_order = list(range(env.agent_num))[::-1]
-
-        # Nouveau attempt 7 : par début/fin alterné
-        elif attempt == 7:
-            print("Test alternating order", flush=True)
-            by_dist = sorted(range(env.agent_num),
-                            key=lambda a: -h_euclidian(env.pos,
-                                                        env.current_start[a],
-                                                        env.goal_array[a]))
-            agent_order = []
-            while by_dist:
-                agent_order.append(by_dist.pop(0))
-                if by_dist:
-                    agent_order.append(by_dist.pop(-1))
-
-
-        else:
-            print("Test random order numero", attempt, flush=True)
-            # Then, random order
-            agent_order = list(range(env.agent_num))
-            random.shuffle(agent_order)
-
-        paths_pp = {}
-        constraints = set()
-        success_count = 0
-
-        for agent in agent_order:                     
-            p = a_star_constrained(env, agent,
-                                   env.current_start[agent],
-                                   env.goal_array[agent],
-                                   constraints)
-            if p is None:
-                print(f"[fallback] attempt {attempt} agent {agent} infeasible, staying at start", flush=True)
-                paths_pp[agent] = [env.current_start[agent]]
-                continue
-            success_count += 1
-            paths_pp[agent] = p
-            for t, node in enumerate(p):
-                nearby = env.proximity_cache[node]    # ← LOOKUP O(1)
-                for other in range(env.agent_num):
-                    if other == agent:
-                        continue
-                    constraints.add((other, node, t, '-'))
-                    for near in nearby:                # ← itère seulement les vrais voisins
-                        constraints.add((other, near, t, '-'))
-
-            # Goal protection
-            goal = env.goal_array[agent]
-            arrival = len(p) - 1
-            for t in range(arrival, arrival + max_horizon):
-                for other in range(env.agent_num):
-                    if other == agent:
-                        continue
-                    constraints.add((other, goal, t, '-'))
-
-        
-        # Comparaison améliorée
-        if success_count == env.agent_num:
-            # Attempt complet : compare par coût
-            attempt_cost = sum(path_cost(env, paths_pp[a], env.goal_array[a])
-                                for a in range(env.agent_num))
-            if attempt_cost < best_cost:
-                best_cost = attempt_cost
-                best_paths = paths_pp
-                best_count = success_count
-                print(f"[FALLBACK] attempt {attempt} success_count={success_count} "
-                      f"cost={attempt_cost} (NEW BEST)", flush=True)
-        elif success_count > best_count:
-            # Attempt incomplet mais meilleur que les précédents partiels
-            best_count = success_count
-            best_paths = paths_pp
-            print(f"[FALLBACK] attempt {attempt} success_count={success_count} "
-                  f"(partial best)", flush=True)
-
-    
-    return best_paths if best_paths is not None else {}
-
-
+            start_i = env.current_start[i]
+            for j in range(env.agent_num):
+                if j == i:
+                    continue
+                # Case 1: deux agents visent le même nœud
+                if actions[i] == actions[j]:
+                    actions[i] = start_i
+                    do = True
+                    break
+                # Case 2: head-on swap
+                if (actions[j] == env.current_start[i]
+                        and actions[i] == env.current_start[j]):
+                    actions[i] = start_i
+                    do = True
+                    break
+    return actions
 
 def a_star_constrained(env, agent, start, goal, constraints):
     """A* pathfinding in env.G using real time (cumulated edge weights) as constraint timestamps."""
@@ -701,7 +590,7 @@ def build_constraints(conflict):
 
     return c1, c2
 
-def local_search_improve(env, best_paths, n_iter=50):
+# def local_search_improve(env, best_paths, n_iter=50):
     import random
     """Try replanning one agent at a time, keep if improves total cost."""
     current = dict(best_paths)
@@ -757,7 +646,7 @@ def local_search_improve(env, best_paths, n_iter=50):
 def cbs(env, upper_bound=float('inf'), warm_solution=None, w=W_BOUND):
     ## Creation of the root node
     start_time = time.time()
-    TIME_OUT = 5.0
+    TIME_OUT = 60.0
 
     print(f"[CBS START] {time.strftime('%H:%M:%S')} agents={env.agent_num} nodes={len(env.G.nodes)}", flush=True)
     loop_start = time.time()
@@ -1003,9 +892,6 @@ def init(env):
         if all_reach_goal:
             UB = warm_cost
             print(f"[WARM START] cost={warm_cost} (used as upper bound)", flush=True)
-            # === LOCAL SEARCH ICI ===
-            warm_solution, warm_cost = local_search_improve(env, warm_solution, n_iter=50)
-            print(f"[LOCAL SEARCH] final cost={warm_cost}", flush=True)
         else:
             UB = float('inf')
             print(f"[WARM START] partial (some agents stuck), no UB", flush=True)
@@ -1058,4 +944,4 @@ def policy(obs, env):
 
             actions.append(path[path_idx[agent]])
 
-    return actions
+    return apply_safety(env,actions)

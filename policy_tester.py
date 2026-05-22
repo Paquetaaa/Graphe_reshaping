@@ -1,6 +1,6 @@
 import gym
 #from policy.policy_CBS_20_04 import policy
-from policy.policy_PBS import policy
+from policy.policy_PBS_early import policy
 # from example.policy_prfl import policy
 import time
 
@@ -41,8 +41,8 @@ def policy_evaluation(policy, drone_num, map_name, reward_list, start, goal, ren
 
 
 if __name__ == "__main__":
-    drone_num = 4 # the number of drones (min:2 max:30)
-    map_name = "map_aoba01"  # the map name (available maps: "map_3x3","map_aoba01","map_osaka" )
+    drone_num = 1 # the number of drones (min:2 max:30)
+    map_name = "map_3x3"  # the map name (available maps: "map_3x3","map_aoba01","map_osaka" )
 
     # reward_list is individual reward function where
     # "goal: 100" means one drone will obtain 100 rewards once it reach its goal.
@@ -55,8 +55,8 @@ if __name__ == "__main__":
     }  # Developers can freely to alter the reward function (rewards are not used as evaluation index)
 
     # If the start and goal are empty lists, they are randomly selected.
-    start = [12, 10, 0, 15]  # drone1's start: node 0;  drone2's start: node 2;  drone3's start: node 4;  drone4's start: node 1;
-    goal = [11, 14, 3, 9]  # drone1's goal: node 3;  drone2's goal: node 6;  drone3's goal: node 1;  drone4's goal: node 7;
+    start = [0] # drone1's start: node 0;  drone2's start: node 2;  drone3's start: node 4;  drone4's start: node 1;
+    goal = [4] # drone1's goal: node 3;  drone2's goal: node 6;  drone3's goal: node 1;  drone4's goal: node 7;
     render = False  # Choose whether to visualize
 
     """

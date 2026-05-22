@@ -244,7 +244,7 @@ def a_star_constrained(env, agent, start, goal, constraints):
 
 
 
-def pick_best_conflict(env,ct_node):
+def pick_best_conflict(env,ct_node,stats=None):
     """ From all conflicts pick the best one - Cardinal, Semi-Cardinal or Non-Cardinal -"""
     conflicts = detect_all_conflicts(ct_node.solution, env)
     if not conflicts:
@@ -254,6 +254,8 @@ def pick_best_conflict(env,ct_node):
     for conflict in conflicts:
         result = classify_conflict_spliting(env, ct_node, conflict)
         cls = result[0]
+        if stats is not None:
+            stats[cls] = stats.get(cls, 0) + 1
         if cls == "cardinal":
             return (conflict, result)           # EARLY-EXIT
         elif cls == "semi-cardinal" and best_semi is None:
@@ -466,11 +468,26 @@ def build_constraints(conflict):
 
     return c1, c2
 
-def cbs(env):
+def cbs(env, time_limit_seconds=None, return_stats=False):
+    """Run CBS with cardinal-conflict prioritization.
+
+    Args:
+        env: drp environment (with reshaped graph already in env.G)
+        time_limit_seconds: optional wall-clock budget. If exceeded, CBS
+            returns the best solution found at the root or None if none.
+        return_stats: when True, returns (solution, stats_dict). Default
+            False preserves the legacy single-return API for init().
+    """
+    start_time = time.time()
+
     ## Creation of the root node
     root = make_root_node(env)
     if root is None:
         print("Racine impossible")
+        if return_stats:
+            return None, {'terminated': 'infeasible_root', 'iterations': 0,
+                          'elapsed': 0.0, 'cardinal': 0, 'semi-cardinal': 0,
+                          'non-cardinal': 0}
         return None
     open_list = []
     counter = 0
@@ -481,14 +498,26 @@ def cbs(env):
     cnt_card = 0
     cnt_semi = 0
     cnt_non  = 0
+    stats = {}
 
 
     # Push the root node in the queue
     heapq.heappush(open_list, (root.cost, counter, root))
-    
+
 
     while open_list and iter_count < max_iter:
-        
+        # Wall-clock timeout check
+        if time_limit_seconds is not None and (time.time() - start_time) > time_limit_seconds:
+            print(f"[CBS TIMEOUT] {time_limit_seconds:.1f}s exceeded at iter {iter_count}")
+            elapsed = time.time() - start_time
+            if return_stats:
+                return None, {'terminated': 'timeout', 'iterations': iter_count,
+                              'elapsed': elapsed,
+                              'cardinal':     stats.get('cardinal', 0),
+                              'semi-cardinal': stats.get('semi-cardinal', 0),
+                              'non-cardinal': stats.get('non-cardinal', 0)}
+            return None
+
         if iter_count % 500 == 0:
             print(f"Iteration {iter_count}, open list size: {len(open_list)}")
 
@@ -502,13 +531,24 @@ def cbs(env):
         #time.sleep(1)
 
 
-        picked_conflict = pick_best_conflict(env, ct_node)
-        
+        picked_conflict = pick_best_conflict(env, ct_node,stats)
+
         if picked_conflict is None:
+            elapsed = time.time() - start_time
             print(f"[CBS] {iter_count} iterations, {bypass_count} bypasses "
                 f"({100*bypass_count/max(iter_count,1):.1f}%)")
             print(f"Total iteration : {iter_count}")
             print(f"[CBS] {cnt_card} cardinal conflicts, {cnt_semi} semi-cardinal conflicts, {cnt_non} non-cardinal conflicts)")
+            print(stats)
+            if return_stats:
+                return ct_node.solution, {
+                    'terminated': 'solved',
+                    'iterations': iter_count,
+                    'elapsed': elapsed,
+                    'cardinal':     stats.get('cardinal', 0),
+                    'semi-cardinal': stats.get('semi-cardinal', 0),
+                    'non-cardinal': stats.get('non-cardinal', 0)
+                }
             return ct_node.solution
 
         
@@ -667,6 +707,17 @@ def cbs(env):
 
         # ## Fin version disjoint spliting
 
+    # Open list exhausted or max_iter reached without finding a conflict-free solution.
+    elapsed = time.time() - start_time
+    if return_stats:
+        return None, {
+            'terminated': 'exhausted' if not open_list else 'max_iter',
+            'iterations': iter_count,
+            'elapsed': elapsed,
+            'cardinal':     stats.get('cardinal', 0),
+            'semi-cardinal': stats.get('semi-cardinal', 0),
+            'non-cardinal': stats.get('non-cardinal', 0)
+        }
     return None
 
 def path_translation(env,result):

@@ -6,7 +6,7 @@ import time
 import problem.problems as problems
 
 ### submission information ####
-TEAM_NAME = "LUCAS GRENECHE"
+TEAM_NAME = "LUCAS_GRENECHE_4_H"
 ##############################
 
 # Global Variables 
@@ -17,7 +17,7 @@ last_node = {} # To detect when an agent has reached its next waypoint
 
 WAIT_COST = 1  # Cost of waiting one step
 
-EARLY_STOP = True
+EARLY_STOP = False
 
 TARGETS_BY_FINGERPRINT = {}
 TARGETS_OLD = {1:28, 2:14, 3:14, 4:29, 5:29, 6:15, 7:24, 8:38, 9:41, 10:32,
@@ -73,8 +73,8 @@ def reshape_graph_from_G(env, G, pos):
 
     for u, v, data in G.edges(data=True):
         w = data['weight'] # distance between u and v
-        k = math.ceil((w / speed) - 1e-9) # Number of intermediate nodes needed to ensure edge traversal takes at least 1 step
-        #print(f"Reshaping edge ({u}, {v}) with weight {w}: needs {k} intermediate nodes")
+        k = math.ceil((w / speed) - 1e-9) # Number of time step needed to ensure edge traversal takes at least 1 step
+        #print(f"Reshaping edge ({u}, {v}) with weight {w}: needs {k} time step")
 
         if k == 1: # No intermediate nodes needed, just copy the edge
             G_new.add_edge(u, v, weight=1)
@@ -90,7 +90,7 @@ def reshape_graph_from_G(env, G, pos):
             #alpha = i / k
             alpha = (i * speed) / w  # au lieu de i / k
             pos_new[new_node] = interpolate(pos_new[u],pos_new[v], alpha)
-            #print(f"Creating intermediate node {new_node} between {u} and {v} at position {pos_new[new_node]}")
+            print(f"Creating intermediate node {new_node} between {u} and {v} at position {pos_new[new_node]}")
 
             G_new.add_edge(prev, new_node, weight=1)
             prev = new_node
@@ -105,7 +105,7 @@ def reshape_graph_from_G(env, G, pos):
             alpha = (i * speed) / w  # au lieu de i / k
 
             pos_new[new_node] = interpolate(pos_new[v],pos_new[u], alpha)
-            #print(f"Creating intermediate node {new_node} between {v} and {u} at position {pos_new[new_node]}")
+            print(f"Creating intermediate node {new_node} between {v} and {u} at position {pos_new[new_node]}")
 
             G_new.add_edge(prev, new_node, weight=1)
             prev = new_node
@@ -116,7 +116,7 @@ def reshape_graph_from_G(env, G, pos):
     return G_new
 
 ## Priority-Based Search (PBS) implementation
-def priority_based_planning(env, max_horizon=500, max_attempts=2000,target_cost=float('inf')):
+def priority_based_planning(env, max_horizon=500, max_attempts=200,target_cost=float('inf')):
     import random
     best_paths = None
     best_count = 0
@@ -155,36 +155,36 @@ def priority_based_planning(env, max_horizon=500, max_attempts=2000,target_cost=
                 score[a] = sum(len(sp[a] & sp[b]) for b in range(env.agent_num) if b != a)
             agent_order = sorted(range(env.agent_num), key=lambda a: -score[a])
 
-        # Goal criticality : agents whose goal node has higher degree (more edges) are more likely to cause conflicts at the end, so we plan them first
-        elif attempt == 4:
-            print("Test Goal criticality order", flush=True)
-            agent_order = sorted(range(env.agent_num),
-                                key=lambda a: -env.G.degree(env.goal_array[a]))
+        # # Goal criticality : agents whose goal node has higher degree (more edges) are more likely to cause conflicts at the end, so we plan them first
+        # elif attempt == 4:
+        #     print("Test Goal criticality order", flush=True)
+        #     agent_order = sorted(range(env.agent_num),
+        #                         key=lambda a: -env.G.degree(env.goal_array[a]))
 
-        # Start Criticality : agents whose start node has higher degree (more edges) are more likely to cause conflicts at the beginning, so we plan them first
-        elif attempt == 5:
-            print("Test Start criticality order", flush=True)
-            agent_order = sorted(range(env.agent_num),
-                                key=lambda a: -env.G.degree(env.current_start[a]))
+        # # Start Criticality : agents whose start node has higher degree (more edges) are more likely to cause conflicts at the beginning, so we plan them first
+        # elif attempt == 5:
+        #     print("Test Start criticality order", flush=True)
+        #     agent_order = sorted(range(env.agent_num),
+        #                         key=lambda a: -env.G.degree(env.current_start[a]))
 
-        # Reverse of the original order
-        elif attempt == 6:
-            print("Test reverse order", flush=True)
-            # déjà couvert par ascending mais avec une autre logique
-            agent_order = list(range(env.agent_num))[::-1]
+        # # Reverse of the original order
+        # elif attempt == 6:
+        #     print("Test reverse order", flush=True)
+        #     # déjà couvert par ascending mais avec une autre logique
+        #     agent_order = list(range(env.agent_num))[::-1]
 
-        # Alternating between the most and least critical agents according to distance to goal
-        elif attempt == 7:
-            print("Test alternating order", flush=True)
-            by_dist = sorted(range(env.agent_num),
-                            key=lambda a: -h_euclidian(env.pos,
-                                                        env.current_start[a],
-                                                        env.goal_array[a]))
-            agent_order = []
-            while by_dist:
-                agent_order.append(by_dist.pop(0))
-                if by_dist:
-                    agent_order.append(by_dist.pop(-1))
+        # # Alternating between the most and least critical agents according to distance to goal
+        # elif attempt == 7:
+        #     print("Test alternating order", flush=True)
+        #     by_dist = sorted(range(env.agent_num),
+        #                     key=lambda a: -h_euclidian(env.pos,
+        #                                                 env.current_start[a],
+        #                                                 env.goal_array[a]))
+        #     agent_order = []
+        #     while by_dist:
+        #         agent_order.append(by_dist.pop(0))
+        #         if by_dist:
+        #             agent_order.append(by_dist.pop(-1))
 
         # Random order
         else:
