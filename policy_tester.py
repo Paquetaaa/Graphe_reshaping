@@ -1,7 +1,9 @@
 import gym
 #from policy.policy_CBS_20_04 import policy
-from policy.policy_PBS_early import policy
+#from policy.Old_Policy.policy_astar_visited import policy
 # from example.policy_prfl import policy
+from policy.Old_Policy import policy_given_path
+from policy.Old_Policy.policy_given_path import policy
 import time
 
 def policy_evaluation(policy, drone_num, map_name, reward_list, start, goal, render):
@@ -29,7 +31,7 @@ def policy_evaluation(policy, drone_num, map_name, reward_list, start, goal, ren
     while not done_all:
         if render == True:
             env.render()
-            #time.sleep(1)
+            time.sleep(0.2)
         #print(f"obs:{obs}")  # current global observation
         actions = policy(obs, env)  # policy:input n_obs,env return each drone's action
         obs, reward, done, info = env.step(
@@ -41,23 +43,21 @@ def policy_evaluation(policy, drone_num, map_name, reward_list, start, goal, ren
 
 
 if __name__ == "__main__":
-    drone_num = 1 # the number of drones (min:2 max:30)
-    map_name = "map_3x3"  # the map name (available maps: "map_3x3","map_aoba01","map_osaka" )
+    # When replaying a recorded trace, pull map / agent_num / starts / goals from it
+    # so the environment matches what was logged.
+    drone_num = policy_given_path.AGENT_NUM
+    map_name = policy_given_path.MAP_NAME
+    start = policy_given_path.STARTS
+    goal = policy_given_path.GOALS
 
-    # reward_list is individual reward function where
-    # "goal: 100" means one drone will obtain 100 rewards once it reach its goal.
-    # Similarly, "collision"/"wait"/"move" are rewards when a collision happens/one drone wait one step/moves one step;
     reward_list = {
         "goal": 100,
         "collision": -10,
         "wait": -10,
         "move": -1,
-    }  # Developers can freely to alter the reward function (rewards are not used as evaluation index)
+    }
 
-    # If the start and goal are empty lists, they are randomly selected.
-    start = [0] # drone1's start: node 0;  drone2's start: node 2;  drone3's start: node 4;  drone4's start: node 1;
-    goal = [4] # drone1's goal: node 3;  drone2's goal: node 6;  drone3's goal: node 1;  drone4's goal: node 7;
-    render = False  # Choose whether to visualize
+    render = True  # Choose whether to visualize
 
     """
     policy_evaluation() function is used to evaluate the "policy" developed by participants

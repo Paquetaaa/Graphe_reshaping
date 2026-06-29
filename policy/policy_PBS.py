@@ -3,7 +3,6 @@ import math
 import networkx as nx
 import heapq
 import time
-import problem.problems as problems
 
 ### submission information ####
 TEAM_NAME = "GRENECHE Lucas"
@@ -17,13 +16,6 @@ last_node = {} # To detect when an agent has reached its next waypoint
 
 WAIT_COST = 1  # Cost of waiting one step
 
-TARGETS_BY_FINGERPRINT = {}
-TARGETS_OLD = {1:28, 2:14, 3:14, 4:29, 5:29, 6:15, 7:24, 8:38, 9:41, 10:32,
-           11:162, 12:189, 13:199, 14:217, 15:306, 16:217, 17:280, 18:342, 19:378, 20:341, 21:510, 22:424, 23:353, 24:593, 25:539, 26:618, 27:637, 28:698, 29:559, 30:603}
-
-for inst in problems.instances:
-    fp = (inst["drone_num"], tuple(inst["start"]), tuple(inst["goal"]))
-    TARGETS_BY_FINGERPRINT[fp] = TARGETS_OLD.get(inst["id"], float('inf'))
 
 ## UTILITY FUNCTIONS
 def h_euclidian(pos, u, v):
@@ -114,7 +106,7 @@ def reshape_graph_from_G(env, G, pos):
     return G_new
 
 ## Priority-Based Search (PBS) implementation
-def priority_based_planning(env, max_horizon=500, max_attempts=200,target_cost=float('inf')):
+def priority_based_planning(env, max_horizon=500, max_attempts=2000):
     import random
     best_paths = None
     best_count = 0
@@ -145,8 +137,6 @@ def priority_based_planning(env, max_horizon=500, max_attempts=200,target_cost=f
                                 key=lambda a: -centrality.get(env.current_start[a], 0))
 
         elif attempt == 3:
-            print("Test path overlap order", flush=True)
-            # Order by path overlap (agents whose shortest path overlaps more with other agents' shortest paths are more likely to cause conflicts, so we plan them first)
             sp = env.shortest_paths_cache
             score = {}
             for a in range(env.agent_num):
@@ -231,22 +221,16 @@ def priority_based_planning(env, max_horizon=500, max_attempts=200,target_cost=f
             # Cost comparison only if all agents reach their goal, otherwise we might favor attempts that are very good for some agents but leave others stuck (which would be unfair since we want all agents to reach their goals)
             attempt_cost = sum(path_cost(env, paths_pp[a], env.goal_array[a])
                                 for a in range(env.agent_num))
-            
             if attempt_cost < best_cost:
                 best_cost = attempt_cost
                 best_paths = paths_pp
                 best_count = success_count
-                print(f"[PBS] attempt {attempt} success_count={success_count} "
+                print(f"[FALLBACK] attempt {attempt} success_count={success_count} "
                       f"cost={attempt_cost} (NEW BEST)", flush=True)
-                
-            # Early stopping if reach best
-            if attempt_cost <= target_cost:
-                print(f"Attempt {attempt} reached target cost {target_cost}, stopping early.", flush=True)
-                return paths_pp
         elif success_count > best_count:
             best_count = success_count
             best_paths = paths_pp
-            print(f"[PBS] attempt {attempt} success_count={success_count} "
+            print(f"[FALLBACK] attempt {attempt} success_count={success_count} "
                   f"(partial best)", flush=True)
 
     
@@ -340,14 +324,9 @@ def init(env):
     paths.clear()
     path_idx.clear()
     last_node.clear()
-    fp = (env.agent_num, tuple(env.start_ori_array), tuple(env.goal_array))
-    target_cost = TARGETS_BY_FINGERPRINT.get(fp, float('inf'))
-    print(f"[DEBUG] fingerprint={fp}, target={target_cost}", flush=True)
 
-
-
-
-
+    print(f"\n[{time.strftime('%H:%M:%S')}] [INSTANCE] episode={env.episode_account} "
+      f"agents={env.agent_num}", flush=True)
     init_start = time.time()
 
     # Saving the original graph and positions.
@@ -395,8 +374,7 @@ def init(env):
 
     # === PBS ===
     print(f"[{time.strftime('%H:%M:%S')}] [WARM START] running priority_based first...", flush=True)
-    print(f"[PBS] target cost for instance {env.episode_account}: {target_cost}", flush=True)
-    warm_solution = priority_based_planning(env,target_cost=target_cost)
+    warm_solution = priority_based_planning(env)
     
     if warm_solution and len(warm_solution) == env.agent_num:
         # Cost calculation for warm solution
