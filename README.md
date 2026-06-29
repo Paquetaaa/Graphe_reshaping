@@ -1,153 +1,233 @@
-<link href="assets\css\markdown.css"></link>
+# Graph Reshaping and Multi-Restart Priority-Based Search for Multi-Agent Drone Routing
 
-# Codes of [DRP Challenge](https://drp-challenge.com/#/overview)
+This repository contains the code and the experimental artefacts of the centralised half of my master's-thesis internship at the **Intelligent Computing Laboratory** (Pr. Donghui Lin), **Okayama University**, March-August 2026.
 
-> [!Note]
->
-> ### News
->
-> 2024.05.09 DRP Challenge at AAMAS2024 was successfully held. Thank you to all participants!
->
-> 2024.04.25 We extended the Submission Deadline to April 28th, 23:59 AoE. We are looking forward to your submission!!
->
-> 2024.03.22 [Some date](https://drp-challenge.com/#/guidelines#important-date) has been changed and [Frequently Asked Questions](assets/markdown/FAQ.md) page open.
->
-> 2024.03.14 A reinforcement learning [example code](example/) has been provided.
->
-> 2024.03.10 A brief illustration [video](https://youtu.be/GvozDxtEDTs) has been uploaded.
+The internship addresses the **Drone Routing Problem (DRP)** on the [DRP-Challenge](https://drp-challenge.com/#/overview) benchmark, with two algorithmic contributions:
 
-## Outline
+1. **Graph Reshape**, a solver-agnostic preprocessing that transforms an arbitrary weighted urban graph into a unit-time directed graph on which any grid-designed MAPF solver (CBS, ICBS, ECBS, PBS, ...) applies unchanged.
+2. **Multi-Restart Priority-Based Search**, a meta-heuristic wrapper around PBS that compensates for PBS's sensitivity to its priority ordering by running several attempts from a diverse pool of orderings.
 
+The combined approach was submitted to the **DRP-Challenge held at the AAMAS'26 opening session** (Paphos, 25-29 May 2026) and finished **3rd out of 42 participants**. The results were packaged into a research paper submitted to **PAAMS'26** (Napoli, October 2026).
+
+> The second half of the internship (decentralised reinforcement learning) lives in a separate repository, [MARL4DRP](https://github.com/Paquetaaa/MARL4DRP).
+
+---
+
+## Table of Contents
+
+- [Context](#context)
+- [Graph Reshape](#graph-reshape)
+- [Multi-Restart PBS](#multi-restart-pbs)
+- [Results](#results)
 - [Installation](#installation)
-- [Development](#development)
-- [Evaluation](#evaluation)
-- [Appendix](#appendix)
+- [Usage](#usage)
+- [Repository layout](#repository-layout)
+- [Citation](#citation)
+- [License](#license)
+- [Acknowledgements](#acknowledgements)
 
-## Click [here!](https://youtu.be/GvozDxtEDTs) for introduction video.
+---
+
+## Context
+
+The DRP-Challenge asks for collision-free trajectories that route a fleet of drones from start to goal nodes on three benchmark maps:
+
+| Map | Nodes | Edges | Drones |
+|---|---|---|---|
+| `map_3x3` (grid) | 9 | 12 | 2-4 |
+| `map_aoba01` (urban, Sendai) | 18 | 22 | 4-8 |
+| `map_shibuya` (urban, Tokyo) | 28 | 39 | 8-12 |
+
+The official cost function (lower is better) is
+```
+cost_p = (1/10) * sum over 10 episodes of sum over drones of cost_{i,j}
+cost_{i,j} = step count if drone reached its goal, else 100 (collision or timeout).
+```
+
+The two urban maps break the standard grid-MAPF assumptions: edges have non-unit travel time, two drones on close but distinct edges can collide mid-edge, and edges traversed in opposite directions cannot be flagged with a single time-stamped vertex constraint. This is the gap the two contributions below address.
+
+---
+
+## Graph Reshape
+
+A preprocessing step that converts a weighted undirected graph `G = (V, E, w)` into a unit-time directed graph `G' = (V', E')` suitable for any grid-MAPF solver.
+
+For each edge `(u, v)` of weight `w(u, v)` and an agent speed `sigma`, the reshape splits the edge into
+```
+k(u, v) = ceil( w(u, v) / sigma )
+```
+unit-weight segments by inserting `k - 1` intermediate nodes. Crucially, it creates **two separate directed chains** for each physical edge (one for `u -> v`, one for `v -> u`), so that two drones can traverse the same physical edge in opposite directions simultaneously without head-on conflict, which matches the regulatory convention that opposite-direction urban flights are deconflicted by altitude.
+
+The output graph `G'` has four properties that matter to grid solvers:
+
+1. **Time-position alignment**: each step in `G'` takes exactly one simulator tick.
+2. **Mid-edge conflict resolution**: vertex and proximity conflicts can be detected at intermediate positions.
+3. **Implicit edge-swap detection**: opposite-direction intermediates on the same physical edge are pairwise within `sigma` of each other, so edge swaps are flagged as proximity conflicts on `G'` without any explicit edge-conflict reasoning.
+4. **Solver agnosticism**: the reshape is purely preprocessing, so CBS, ICBS, ECBS, PBS and any future grid-based MAPF solver apply unmodified.
+
+Pseudocode is in the paper; the Python implementation is `generate_intermediate_nodes.py`. Graph sizes before/after reshape on the three benchmark maps:
+
+| Map | `|V|` | `|E|` | `|V'|` | `|E'|` | Expansion |
+|---|---|---|---|---|---|
+| `3x3`     | 9  | 12 | 91   | 106  | 10.1x |
+| `aoba01`  | 18 | 22 | 548  | 574  | 30.4x |
+| `shibuya` | 28 | 39 | 1008 | 1058 | 36.0x |
+
+---
+
+## Multi-Restart PBS
+
+Priority-Based Search (PBS, Ma et al., 2019) is a suboptimal MAPF solver that fixes a priority ordering of the agents and plans them sequentially with A* under constraints from higher-priority agents. PBS is dramatically faster than CBS-family solvers on large instances, but the quality of its solution (and sometimes its existence) depends heavily on the priority ordering.
+
+To compensate, **Multi-Restart PBS** runs up to `K` independent PBS attempts. The first 8 attempts use deterministic priority heuristics, the remaining `K - 8` attempts use random shuffles of the agent set. The best valid plan found is returned.
+
+The 8 deterministic orderings:
+
+| Heuristic | Idea |
+|---|---|
+| `ShortestFirst` | Shortest A* path first |
+| `LongestFirst` | Longest A* path first |
+| `Centrality` | Highest graph-centrality start first |
+| `PathOverlap` | Most overlap with other agents' A* paths first |
+| `GoalCriticality` | Highest-degree goal node first |
+| `StartCriticality` | Highest-degree start node first |
+| `Alternating` | Interleaves descending-distance head-to-tail |
+| `ReverseID` | Reverse agent IDs (cheap deterministic seed) |
+
+Empirically, no single deterministic heuristic dominates: the best one wins on only **46.7 % of instances**. The diversity of the pool is what makes Multi-Restart PBS robust across maps and start/goal configurations. The Python implementation is `policy/policy_PBS.py`.
+
+---
+
+## Results
+
+Cost per map at each pipeline stage (lower is better). `N/A` means the solver did not converge within the compute budget; the row total uses a single-pass PBS fallback on timeout.
+
+| Stage | Map 1 (3x3) | Map 2 (Aoba01) | Map 3 (Shibuya) | Total |
+|---|---|---|---|---|
+| Reactive baseline (A* + wait-on-conflict)          | 401 | 4112   | 7340   | 11853 |
+| CBS with single-pass PBS fallback                  | 347 | N/A    | N/A    | 11532 |
+| + ICBS (cardinal prioritisation)                   | 268 | N/A    | N/A    | 10377.5 |
+| + Disjoint Splitting (vertex only)                 | 268 | N/A    | N/A    | 10303.5 |
+| + Warm start + UB pruning                          | 268 | N/A    | N/A    | 10207.8 |
+| ECBS (focal, w = 2)                                | 274 | N/A    | N/A    | 12716 |
+| PBS, 100 attempts                                  | 264 | 2635.5 | 5744   | 8643.5 |
+| PBS, 200 attempts                                  | 264 | 2634   | 5704   | 8602 |
+| PBS, 500 attempts                                  | 264 | 2631   | 5544.5 | 8439.5 |
+| **Multi-Restart PBS with caching (final)**         | **264** | **2631** | **5532.2** | **8427.2** |
+
+**Final ranking**: 3rd / 42 at the DRP-Challenge held at AAMAS'26 (Paphos, 25-29 May 2026).
+
+Detailed conflict-class statistics and the heuristic-diversity ablation are in the PAAMS'26 paper.
+
+---
 
 ## Installation
 
-This environment works in `python==3.11.4`.(For more details, please refer to [this Q&A](https://github.com/DrpChallenge/main/blob/main/assets/markdown/FAQ.md#installation) )
-We recommend you create an exclusive environment like
+The environment was developed and tested with `python==3.11.4`.
 
-```
+```bash
 conda create -n drpdev python=3.11.4
 conda activate drpdev
+
+git clone https://github.com/Paquetaaa/Graphe_reshaping.git
+cd Graphe_reshaping
+pip install -e .
+pip install -r requirements.txt
 ```
 
-before executing the following code.
+A scripted setup is available in `setup_conda.sh`.
+
+The DRP-Challenge GUI is available with:
+
+```bash
+python policy_tester.py
+```
+
+---
+
+## Usage
+
+### Run a policy on the full benchmark
+
+```bash
+python calculate_cost.py
+```
+
+This evaluates `policy/policy_PBS.py` over the 30 problems defined in `problem/problems.py` and writes a JSON file in `Results/` with the final cost.
+
+### Reproduce the paper numbers
+
+The Multi-Restart PBS submission that achieved 8427.2 is saved as `Results/GRENECHE Lucas_8427.2.json`. The corresponding policy is `policy/policy_PBS.py` with `K = 2000` attempts.
+
+### Reproduce the ablations
+
+- A* expansion counts across maps: `python astar_expansions_comparison.py`
+- CBS conflict-class statistics: `python cbs_stats_evaluation.py`
+- Cost plots from the JSON results: `python result_plot.py`
+
+---
+
+## Repository layout
 
 ```
-git clone https://github.com/DrpChallenge/main.git
-pip3 install -e ./main
-pip3 install -r ./main/requirements.txt
+.
+├── README.md                          this file
+├── LICENSE
+├── setup.py / requirements.txt        package metadata + Python deps
+├── setup_conda.sh                     scripted conda env
+├── drp_env/                           DRP-Challenge environment (Gym-compatible)
+├── problem/problems.py                30 benchmark instances (read-only)
+├── policy/
+│   ├── policy_PBS.py                  Multi-Restart PBS (used for the 8427.2 submission)
+│   ├── policy_PBS_early.py            earlier PBS variant kept for reproducibility
+│   └── Old_Policy/                    historical baselines (reactive A*, CBS, ICBS, ECBS)
+├── generate_intermediate_nodes.py     Graph Reshape preprocessing
+├── policy_tester.py                   visual sandbox for a single policy
+├── calculate_cost.py                  full-benchmark evaluator
+├── astar_expansions_comparison.py     low-level A* expansion analysis
+├── cbs_stats_evaluation.py            CBS conflict-class statistics
+├── result_plot.py                     post-processing plots
+├── example/                           reinforcement-learning example provided by the organisers
+├── assets/                            images and markdown referenced by this README
+└── Results/                           submitted JSON files (per-attempt and per-variant)
 ```
 
-Then it will show the following GUI if you run `policy_tester.py`.
+---
 
-<img src = assets\img\drpexample.png width="25%">
+## Citation
 
-Success :tada::tada: Let's start to develop algorithms for DRP challenge!
+If you use this code, please cite the PAAMS'26 paper:
 
-<a id="development"></a>
+```bibtex
+@unpublished{greneche2026graph,
+  title  = {Graph Reshaping and Multi-Restart Priority-Based Search for Multi-Agent Drone Routing on Urban Graphs},
+  author = {Gren{\`e}che, Lucas and Lin, Donghui},
+  year   = {2026},
+  note   = {Submitted to PAAMS'26, Milan, Italy}
+}
+```
 
-## Development
+The PBS algorithm itself is from Ma et al. 2019:
 
-<!-- #### ``policy/policy.py`` -->
+```bibtex
+@inproceedings{ma2019pbs,
+  title     = {Searching with Consistent Prioritization for Multi-Agent Path Finding},
+  author    = {Ma, Hang and Harabor, Daniel and Stuckey, Peter J. and Li, Jiaoyang and Koenig, Sven},
+  booktitle = {Proceedings of the AAAI Conference on Artificial Intelligence},
+  year      = {2019}
+}
+```
 
-In this competition, participants are expected to develop `policy/policy.py`, which is essentially a mapping from input(`observation`) to output (`joint action`) at each step.
+---
 
-- `observation (obs)`: The obs $s^i$ for each drone consists of two parts: `current location` and `goal position`. They are in soft-hot representation: the length of this vector $s^i=\left[s_1^i, \ldots, s_j^i, \ldots s_{|V|}^i, s_{|V|+1}^i, \ldots, s_{|V|+j}^i, \ldots s_{|V|*2}^i\right]$ equates to the double of number $|V|$ of the nodes on a map.
+## License
 
-  - It marks a node $s_j^i$ with 1 if the drone occupies it, while the rest remain zero.
-  - For drones located on the edges, vector values are defined by: $s_j^i=1-\frac{len\left(l o c^i-v_j^i\right)}{len\left(v_j, v_k\right)}, s_k^i=1-s_j^i$ when drone $i$ traverses edge $\left(v_j, v_k\right)$, and 0 otherwise. Here, $loc^i=\left(l^{x^i}, l^{y^i}\right)$ represents drone $i$ 's current coordinates and len(,) represents the distance. As drone i approaches node $v_j^i$, the value of $s_j^i$ increases.
-  - Also, it has Field of View information, which marks a node $s_j^i$ in onehot with -1 if another drone occupies it.
-  <p align="center">
-   <img src="assets/img/obs.png" width="35%" >
-    <img src="assets/img/framework.png" width="50%" >
-  </p>
+This repository is released under the MIT License (see `LICENSE`).
 
-- `joint action`: At each step, drones can choose a node to move. Consequently, we represent the action set $A$ using the node set $V$. It will wait at the current node if a drone choose an non-adjacent nodes. The joint action includes all individual actions from all drones.
-<!--
-<p align="center">
- <img src="assets/img/policy.png" width="65%" >
-</p>
--->
+---
 
-#### Step and Episode
+## Acknowledgements
 
-Every time each drone takes action, increases step count.
-In other words, every time the `step` function is excused, the number of steps increases by one.
+I thank Professor Donghui Lin for the supervision throughout this internship, the Lin Lab members for their support, and the organisers of the DRP-Challenge for the benchmark and the simulator.
 
-The episode ends upon conflict, exceeding 100 steps, or all drones reaching goals and restarting with a new environment ( If not specified indications, only the positions of the start and goal change.).
-
-#### Goal for Contribution
-
-The goal for contribution in this competition is to minimize [cost](#cost) without collision happens.
-You can test your developed (`policy/policy.py`) by loading it in `policy_tester.py`.
-
-> [!NOTE]
-> Since drp is a gym-standard environment, you can develop it as an usual gym-standard environment without relying on `policy_tester.py` we provided. There is an [example code](example/) by using [pfrl](https://github.com/pfnet/pfrl).
-
-<a id="evaluation"></a>
-
-## Evaluation
-
-We use three maps for evaluations: `map_3x3`, `map_aoba01`, `map_shibuya`.
-
-<p align="center">
-  <img src="assets/img/map3_3.png" width="30%" >
-  <img src="assets/img/map_aoba01.png" width="30%" >
-  <img src="assets/img/map_shibuya.png" width="30%" >
-</p>
-
-Each map will be evaluated on various drone numbers and various start-goal pairs.
-We call one pattern (fixed map, number of drones, and start-goal pair) as a problem and there are a totally of 30 problems which are defined in `problem/problems.py`. (Participants are forbidden to alter this file.)
-
-<a id="cost"></a>
-
-#### Cost for each problem 　
-
-$$
-cost_p = \frac{1}{10} \sum_{i=1}^{10} \sum_{j \in drones} cost_{ij}
-$$
-
-Where:
-$i$ is the iteration number. For each problem, we take average of 10 iterations as the final result.
-$drones$ is the set of drones at that problem.
-
-$$
-cost_{ij} = \begin{cases}
-step_{ij} & \text{if drone $j$ reached its goal without collision at iteration $i$, $cost_{ij}$ is the steps costed until reaching its goal } \\
-100 & \text{if collision happened or drone $j$ doesn't reach the goal } \\
-\end{cases}
-$$
-
-There are three classic patterns to calculate costs as follows.
-
-<p align="center">
-<img src="assets/img/score_1.png" width="30%" >
-<img src="assets/img/score_2.png" width="30%" >
-<img src="assets/img/score_3.png" width="30%" >
-</p>
-
-#### Final cost of all problems
-
-$$
-Final~Cost = \sum_{p \in problems}cost_p
-$$
-
-where:
-$cost_p$ is the cost of the problem $p$.
-
-The final cost is the sum of the costs of the 30 problems ([more details](https://github.com/DrpChallenge/main/blob/main/problem/problems.py)). The objective is to **minimize** this final cost $Final~Cost$.
-
-Once your (`policy/policy.py`) has been deployed, you can run `calculate_cost.py`, which will outputs a json file (`your_team_name.json`) including the cost (named `final cost`).
-
-<a id ="appendix"></a>
-
-## Appendix
-
-Please refer to [this page](assets/markdown/appendix.md) to get more detailed information about the DRP environment.
-
-## [FAQ](assets/markdown/FAQ.md)
+This work was carried out as part of the Okayama University International Research Internship Program, with mobility support from the Auvergne-Rhône-Alpes Region.
