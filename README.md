@@ -199,12 +199,13 @@ The Multi-Restart PBS submission that achieved 8427.2 is saved as `Results/GRENE
 If you use this code, please cite the PAAMS'26 paper:
 
 ```bibtex
-@unpublished{greneche2026graph,
+<!-- @unpublished{greneche2026graph,
   title  = {Graph Reshaping and Multi-Restart Priority-Based Search for Multi-Agent Drone Routing on Urban Graphs},
   author = {Gren{\`e}che, Lucas and Lin, Donghui},
   year   = {2026},
   note   = {Submitted to PAAMS'26, Milan, Italy}
-}
+} -->
+A venir 
 ```
 
 The PBS algorithm itself is from Ma et al. 2019:
